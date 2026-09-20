@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# READ-ONLY Outlook CLI (no send / no write / no delete / no mark-read).
+#
+# Usage:
+#   mail whoami
+#   mail folders [-Folder "name"]
+#   mail list    [-Folder "name"] [-N 20] [-Offset 0] [-Since 2026-09-01] [-Before 2026-10-01] [-Json]
+#   mail unread  [-N 10] [-Offset 0] [-Json]
+#   mail search  -Query "text" [-Folder "name"] [-Scope all] [-N 10] [-Offset 0] [-Json]
+#   mail read    -Id <entryid> [-Json]
+#   mail digest  [-Folder "name"] [-N 10] [-Offset 0] [-Since ...] [-Json]
+#   mail attachments -Id <entryid> [-Json]
+#   mail calendar [-N 10] [-Offset 0] [-Since ...] [-Before ...] [-Json]
+#   mail contacts [-N 20] [-Offset 0] [-Json]
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PS="$(cygpath -w "$DIR/outlook-read.ps1")"
+exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PS" "$@"
