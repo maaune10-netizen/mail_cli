@@ -96,6 +96,58 @@ function Format-Rows($rows, [int]$max = 10) {
   return ($t -join "`n")
 }
 
+# Keep line structure of a body, insert a divider where Arabic and Latin meet.
+function Format-Body([string]$text) {
+  if (-not $text) { return '' }
+  $lines = @($text -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+  $out = New-Object System.Collections.Generic.List[string]
+  $prev = ''
+  foreach ($ln in $lines) {
+    $ar = ([regex]::Matches($ln, '[\u0600-\u06FF]')).Count
+    $la = ([regex]::Matches($ln, '[A-Za-z]')).Count
+    $cat = ''
+    if ($ar -gt 0 -and $ar -ge $la) { $cat = 'AR' } elseif ($la -gt 0) { $cat = 'EN' }
+    if ($prev -and $cat -and $cat -ne $prev) { $out.Add(('─' * 14)) }
+    $out.Add($ln)
+    if ($cat) { $prev = $cat }
+  }
+  return ($out -join "`n")
+}
+
+# Header in the order the user wants: time -> sender -> subject.
+function Format-Header($r, [string]$badge = '') {
+  $t = @()
+  $t += "🕐 $($r.date)"
+  $t += "👤 $($r.from)"
+  $t += "   <$($r.fromEmail)>"
+  $t += "📌 $($r.subject)"
+  if ($badge) { $t += $badge }
+  return ($t -join "`n")
+}
+
+# Send image attachments of a message to the chat (max 4), then clean up.
+function Send-MailImages([string]$id) {
+  try {
+    $list = EngineJson @('-Cmd', 'attachments', '-Json', '-Id', $id)
+    $imgs = @(@($list.attachments) | Where-Object { "$($_.file)" -match '(?i)\.(jpg|jpeg|png|gif|webp|bmp)$' })
+    if ($imgs.Count -eq 0) { return }
+    $dest = Join-Path $env:TEMP ("olimg_" + (($id -replace '[^A-Za-z0-9]', '').Substring(0, 10)))
+    [void](Engine @('-Cmd', 'attachment-save', '-Id', $id, '-Dest', $dest))
+    $sent = 0
+    foreach ($f in (Get-ChildItem $dest -File -ErrorAction SilentlyContinue)) {
+      if ($sent -ge 4) { break }
+      if ("$($f.Name)" -notmatch '(?i)\.(jpg|jpeg|png|gif|webp|bmp)$') { continue }
+      $tmp = Join-Path $env:TEMP ("olup_" + [guid]::NewGuid().ToString('N').Substring(0, 8) + [IO.Path]::GetExtension($f.Name))
+      Copy-Item $f.FullName $tmp -Force
+      [void](& curl.exe -s -F "chat_id=$($script:chat)" -F "photo=@$tmp" "https://api.telegram.org/bot$($script:token)/sendPhoto")
+      Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+      $sent++
+    }
+    Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue
+    Log "images sent: $sent"
+  } catch { Log "send images error: $($_.Exception.Message)" }
+}
+
 # ---------- actions ----------
 function Send-Digest([switch]$Update) {
   $count = 50; if ($cfg.digest_count) { $count = [int]$cfg.digest_count }
@@ -139,16 +191,19 @@ function Check-Alerts {
     # mode 'important' -> only important; mode 'all' -> every new mail
     if ($script:alertMode -eq 'important' -and -not $isImportant) { continue }
 
+    $doImgs = $false
     if ($isImportant) {
       $full = EngineJson @('-Cmd', 'read', '-Json', '-Id', $r.id)
-      $body = "$($full.body)"; if (-not $body) { $body = "$($r.snippet)" }
-      $msg = "🚨 [$score/10 $level]`n`nمن: $($r.from) <$($r.fromEmail)>`nالتاريخ: $($r.date)`nالموضوع: $($r.subject)`n`n$body"
+      $body = "$($full.bodyFull)"; if (-not $body) { $body = "$($full.body)" }; if (-not $body) { $body = "$($r.snippet)" }
+      $msg = "$(Format-Header $r "🚨 $score/10 $level")`n────────────────`n$(Format-Body $body)"
+      $doImgs = $true
     } else {
-      $snip = "$($r.snippet)"; if ($snip.Length -gt 400) { $snip = $snip.Substring(0, 400) + '...' }
-      $msg = "📧 [$score/10 $level] رسالة جديدة`n`nمن: $($r.from) <$($r.fromEmail)>`nالتاريخ: $($r.date)`nالموضوع: $($r.subject)"
-      if ($snip) { $msg += "`n`n$snip" }
+      $snip = Format-Body "$($r.snippet)"
+      $msg = "$(Format-Header $r "📧 $score/10 $level")`n────────────────"
+      if ($snip) { $msg += "`n$snip" }
     }
     Send-Text $msg
+    if ($doImgs) { Send-MailImages $r.id }
     $alerted += $r.id
     $sent++
   }
@@ -271,8 +326,12 @@ function Handle([string]$text) {
       $n = [int]$arg; if ($n -lt 1) { $n = 1 }; if ($n -gt 30) { $n = 30 }
       $rows = EngineJson @('-Cmd', 'list', '-Json', '-N', "$n")
       if (@($rows).Count -lt $n) { Send-Text 'ما فيه رسالة بهذا الرقم. استخدم /last'; return }
-      $id = @($rows)[$n - 1].id
-      Send-Text (Engine @('-Cmd', 'read', '-Id', $id))
+      $meta = @($rows)[$n - 1]
+      $full = EngineJson @('-Cmd', 'read', '-Json', '-Id', $meta.id)
+      $body = "$($full.bodyFull)"; if (-not $body) { $body = "$($full.body)" }
+      $badge = ''; if ($meta.score -ne $null) { $badge = "[$($meta.score)/10 $($meta.level)]" }
+      Send-Text "$(Format-Header $meta $badge)`n────────────────`n$(Format-Body $body)"
+      Send-MailImages $meta.id
     }
     'search' {
       if (-not $arg) { $script:pending = 'search'; Send-Text '🔎 اكتب كلمة البحث 👇'; return }

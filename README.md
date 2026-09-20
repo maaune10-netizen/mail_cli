@@ -222,6 +222,31 @@ keywords (+2), official AOU/Arabou sender (+2), High importance (+3), flagged
 The score is available in `list -Json -Snippet` as `score` + `level`, and is
 used to decide whether `alert_mode = important` fires.
 
+### Message layout
+
+Alerts are formatted the natural way — **time first, then sender, then the
+message**:
+
+```
+🕐 2026-09-20 12:42
+👤 Student Announcements AOU KSA
+   <std.announcements@aou.edu.sa>
+📌 اعلان أداء الامتحان النصفي في فرع اخر
+🚨 10/10 🔴 عاجل
+────────────────
+<body>
+```
+
+The body keeps its line breaks, and a divider (`──────────────`) is inserted
+wherever an **Arabic run meets a Latin run**, so the two languages don't run
+together.
+
+### Images
+
+If a message has image attachments (`.jpg/.jpeg/.png/.gif/.webp/.bmp`), up to 4
+of them are uploaded to the chat with the alert (e.g. exam instruction images).
+They are saved to a temp folder, uploaded, then deleted.
+
 ### Install / run
 
 ```powershell

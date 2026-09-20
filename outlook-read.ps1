@@ -284,6 +284,7 @@ function Show-Body($m, [int]$max) {
       attachments = $attNames
       links       = @($links)
       body        = (P (Get-BodyText $m) $max)
+      bodyFull    = "$(Get-BodyText $m)"
     }) -Depth 4)
   }
   "From: $(GetVal { $m.SenderName } '') <$(Get-FromEmail $m)>"
