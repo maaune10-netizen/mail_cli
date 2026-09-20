@@ -29,6 +29,21 @@ if ($Remove) {
 
 if (-not (Test-Path $bot)) { throw "bot not found: $bot" }
 
+# Prevent the "Choose Profile" dialog when COM starts Outlook in the background.
+$olKey = 'HKCU:\Software\Microsoft\Office\16.0\Outlook'
+try {
+  $cur = (Get-ItemProperty -Path $olKey -Name DefaultProfile -ErrorAction SilentlyContinue).DefaultProfile
+  if (-not $cur) {
+    $profiles = @(Get-ChildItem "$olKey\Profiles" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty PSChildName)
+    if ($profiles.Count -gt 0) {
+      New-ItemProperty -Path $olKey -Name DefaultProfile -Value $profiles[0] -PropertyType String -Force | Out-Null
+      "Set Outlook DefaultProfile = $($profiles[0]) (stops the profile prompt)"
+    } else {
+      "Warning: no Outlook profile found; open Outlook once to create one"
+    }
+  }
+} catch { "Warning: could not set DefaultProfile: $($_.Exception.Message)" }
+
 if (-not $KeepReportTask) {
   if (Get-ScheduledTask -TaskName $OldReportTask -ErrorAction SilentlyContinue) {
     Unregister-ScheduledTask -TaskName $OldReportTask -Confirm:$false

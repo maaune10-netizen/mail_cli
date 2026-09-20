@@ -430,9 +430,14 @@ while ($true) {
     foreach ($t in @($cfg.times)) {
       $target = $null; try { $target = [datetime]::Parse($t) } catch {}
       if ($target -and $now -ge $target -and $fired[$t] -ne $now.ToString('yyyy-MM-dd')) {
-        Log "scheduled digest at $t"
-        Send-Digest -Update
-        $fired[$t] = $now.ToString('yyyy-MM-dd')
+        $fired[$t] = $now.ToString('yyyy-MM-dd')   # mark either way, so a restart never repeats it
+        $late = ($now - $target).TotalMinutes
+        if ($late -le 30) {
+          Log "scheduled digest at $t"
+          Send-Digest -Update
+        } else {
+          Log "skipped stale digest $t (late by $([int]$late)m)"
+        }
       }
     }
   } catch {
