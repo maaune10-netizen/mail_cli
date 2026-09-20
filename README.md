@@ -183,12 +183,25 @@ works: ASCII names with Arabic aliases.
 | `/search word` | `/بحث` | Search every mail folder |
 | `/course CODE` | `/مقرر` | Messages about a course, e.g. `GR101` |
 | `/time 10:00,18:00` | `/وقت` | Change the digest schedule |
-| `/alerts on|off` | `/تنبيه` | Toggle real-time important-mail alerts |
+| `/alerts off|important|all` | `/تنبيه` | Toggle alerts: off / important only / **every** new mail |
+| `/interval N` | `/فحص` | How often to check mail (seconds, ≥20) |
 | `/help` | `/مساعدة` | Command list |
 
 `/action` and `/exams` are the student-focused ones: they scan recent mail for
 action/deadline/exam keywords and list what matters. The engine supports the
 pattern search they use via `mail search -Regex -Query "اختبار|كويز"`.
+
+### Alert modes
+
+| `alert_mode` | Behaviour |
+|---|---|
+| `off` | no alerts |
+| `important` (default) | alerts only when the mail looks important (High/flagged or action/exam keywords) — sent with the **full body** |
+| `all` | **every** new message gets pushed (sender + subject + short preview) |
+
+The 🔔 التنبيهات button cycles off → important → all. `poll_seconds` (default
+60) controls how fast mail is noticed; a new message is detected within one
+poll interval.
 
 ### Install / run
 

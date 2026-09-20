@@ -47,6 +47,9 @@ $script:token = "$($cfg.token)"
 $script:chat = "$($cfg.chat_id)".Trim()
 if (-not $script:token) { throw 'token missing in config' }
 if (-not $script:chat) { throw 'chat_id missing in config' }
+# alert modes: off | important | all
+$script:alertMode = "$($cfg.alert_mode)"
+if (-not $script:alertMode) { if ("$($cfg.alert_importance)" -eq 'off') { $script:alertMode = 'off' } else { $script:alertMode = 'important' } }
 
 # ---------- telegram ----------
 function Tg([string]$method, $params, [int]$timeoutSec = 35) {
@@ -113,7 +116,7 @@ function Save-Alerted($ids) {
 }
 
 function Check-Alerts {
-  if ("$($cfg.alert_importance)".ToLower() -eq 'off') { return }
+  if ($script:alertMode -eq 'off') { return }
   $since = $null
   if (Test-Path $AlertFile) {
     $raw = "$(Get-Content $AlertFile -Raw -Encoding UTF8)".Trim()
@@ -130,17 +133,24 @@ function Check-Alerts {
     if ("$($r.importance)" -eq 'High') { $reasons += 'أهمية عالية' }
     if ($cfg.alert_flagged -and "$($r.flag)" -eq 'Flagged') { $reasons += 'معلّمة' }
     if ("$($r.subject) $($r.snippet)" -match $re) { $reasons += 'تحتاج انتباه' }
-    if ($reasons.Count -eq 0) { continue }
-    # Full body for important mail (no truncation).
-    $full = EngineJson @('-Cmd', 'read', '-Json', '-Id', $r.id)
-    $body = "$($full.body)"
-    if (-not $body) { $body = "$($r.snippet)" }
-    $msg = "🚨 رسالة مهمة ($($reasons -join ' + '))`n`nمن: $($r.from) <$($r.fromEmail)>`nالتاريخ: $($r.date)`nالموضوع: $($r.subject)`n`n$body"
+    $isImportant = $reasons.Count -gt 0
+    # mode 'important' -> only flagged-by-content; mode 'all' -> every new mail
+    if ($script:alertMode -eq 'important' -and -not $isImportant) { continue }
+
+    if ($isImportant) {
+      $full = EngineJson @('-Cmd', 'read', '-Json', '-Id', $r.id)
+      $body = "$($full.body)"; if (-not $body) { $body = "$($r.snippet)" }
+      $msg = "🚨 رسالة مهمة ($($reasons -join ' + '))`n`nمن: $($r.from) <$($r.fromEmail)>`nالتاريخ: $($r.date)`nالموضوع: $($r.subject)`n`n$body"
+    } else {
+      $snip = "$($r.snippet)"; if ($snip.Length -gt 400) { $snip = $snip.Substring(0, 400) + '...' }
+      $msg = "📧 رسالة جديدة`n`nمن: $($r.from) <$($r.fromEmail)>`nالتاريخ: $($r.date)`nالموضوع: $($r.subject)"
+      if ($snip) { $msg += "`n`n$snip" }
+    }
     Send-Text $msg
     $alerted += $r.id
     $sent++
   }
-  if ($sent -gt 0) { Save-Alerted $alerted; Log "alerts sent: $sent" }
+  if ($sent -gt 0) { Save-Alerted $alerted; Log "alerts sent: $sent (mode $($script:alertMode))" }
   [IO.File]::WriteAllText($AlertFile, (Get-Date).ToString('o'), (New-Object System.Text.UTF8Encoding($false)))
 }
 
@@ -157,7 +167,8 @@ $ALIAS = @{
   'search' = 'search'; 'بحث' = 'search'
   'course' = 'course'; 'مقرر' = 'course'
   'time' = 'time'; 'وقت' = 'time'
-  'alerts' = 'alerts'; 'تنبيه' = 'alerts'
+  'alerts' = 'alerts'; 'تنبيه' = 'alerts'; 'تنبيهات' = 'alerts'
+  'interval' = 'interval'; 'فحص' = 'interval'
 }
 $ACTION_RE = 'مطلوب|يجب عليك|الرجاء|يرجى|تسجيل|سجّل|دفع|رسوم|غرامة|تحقق|وثيقة|مستند|ارفع|رفع|نموذج|استبيان|عبّئ|عبئ|آخر موعد|deadline|submit|upload|verify|register|payment|أكمل|اكمل|renew'
 $EXAM_RE = 'اختبار|كويز|امتحان|exam|quiz|midterm|final exam'
@@ -201,7 +212,8 @@ $HELP = @"
 📥 آخر الرسائل — آخر 10
 🔎 بحث / 🎓 مقرر — يطلبان منك كلمة واحدة
 ⏰ الأوقات — تغيير وقت التقارير
-🔔 التنبيهات — تنبيهات المهم فوراً
+🔔 التنبيهات — بدّل: مطفية / المهم فقط / كل رسالة
+⏰ الأوقات — تغيير وقت التقارير
 "@
 
 function Handle([string]$text) {
@@ -283,12 +295,24 @@ function Handle([string]$text) {
     }
     'alerts' {
       $c = Get-Cfg
-      if ($arg.ToLower() -eq 'on') { $c.alert_importance = 'High' }
-      elseif ($arg.ToLower() -eq 'off') { $c.alert_importance = 'off' }
-      else { Send-Text "تنبيهات المهم: $($c.alert_importance) — استخدم /alerts on|off"; return }
+      $mode = "$($c.alert_mode)"; if (-not $mode) { $mode = $script:alertMode }
+      if ($arg -in @('off', 'important', 'all')) { $mode = $arg }
+      elseif (-not $arg) {
+        if ($mode -eq 'off') { $mode = 'important' } elseif ($mode -eq 'important') { $mode = 'all' } else { $mode = 'off' }
+      }
+      $c.alert_mode = $mode
+      [IO.File]::WriteAllText($Config, (ConvertTo-Json -InputObject $c -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
+      $script:cfg = $c; $script:alertMode = $mode
+      $desc = switch ($mode) { 'off' { 'مطفية' } 'all' { 'كل رسالة جديدة' } default { 'المهم فقط (نص كامل)' } }
+      Send-Text "🔔 التنبيهات: $desc`n`nاضغط الزر مرة ثانية للتبديل، أو /alerts off|important|all"
+    }
+    'interval' {
+      if ($arg -notmatch '^\d+$') { Send-Text "⏱ الفحص الحالي كل $($cfg.poll_seconds) ثانية — للتغيير: /interval 30"; return }
+      $sec = [int]$arg; if ($sec -lt 20) { $sec = 20 }; if ($sec -gt 600) { $sec = 600 }
+      $c = Get-Cfg; $c.poll_seconds = $sec
       [IO.File]::WriteAllText($Config, (ConvertTo-Json -InputObject $c -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
       $script:cfg = $c
-      Send-Text "🔔 تنبيهات المهم: $($c.alert_importance)"
+      Send-Text "⏱ صار الفحص كل $sec ثانية"
     }
     default { Send-Menu "ما فهمت: $cmd`n`n$HELP" }
   }
