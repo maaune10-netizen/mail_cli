@@ -18,6 +18,7 @@ param(
   [string]$Since = '',
   [string]$Before = '',
   [string]$Scope = '',
+  [switch]$Regex,
   [int]$Index = -1,
   [string]$Dest = '',
   [string]$State = '',
@@ -326,7 +327,7 @@ report prints an Arabic digest of messages newer than the last run (state file).
     Build-Records $it 'mail' $N $Offset $Json
   }
   'search' {
-    $q = [regex]::Escape($Query)
+    $q = if ($Regex) { $Query } else { [regex]::Escape($Query) }
     if ($Scope -eq 'all') {
       $found = @()
       foreach ($fold in (Get-AllMailFolders $ns.GetDefaultFolder(6).Parent 6)) {

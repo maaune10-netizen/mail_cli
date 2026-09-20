@@ -12,6 +12,7 @@
 #     "digest_count": 50 }
 param(
   [string]$Config = (Join-Path $env:LOCALAPPDATA 'outlook-read\telegram.json'),
+  [string]$Cmd = '',
   [switch]$Once,
   [switch]$Test,
   [switch]$Verbose2
@@ -140,45 +141,96 @@ function Check-Alerts {
 }
 
 # ---------- commands ----------
+# Student-focused. ASCII names for the Telegram menu + Arabic aliases.
+$ALIAS = @{
+  'start' = 'help'; 'help' = 'help'; 'مساعدة' = 'help'
+  'check' = 'check'; 'جديد' = 'check'
+  'action' = 'action'; 'المطلوب' = 'action'; 'مطلوب' = 'action'
+  'exams' = 'exams'; 'الاختبارات' = 'exams'; 'اختبارات' = 'exams'
+  'unread' = 'unread'; 'غير_مقروء' = 'unread'; 'غيرمقروء' = 'unread'
+  'last' = 'last'; 'آخر' = 'last'
+  'read' = 'read'; 'قراءة' = 'read'
+  'search' = 'search'; 'بحث' = 'search'
+  'course' = 'course'; 'مقرر' = 'course'
+  'time' = 'time'; 'وقت' = 'time'
+  'alerts' = 'alerts'; 'تنبيه' = 'alerts'
+}
+$ACTION_RE = 'مطلوب|يجب عليك|الرجاء|يرجى|تسجيل|سجّل|دفع|رسوم|غرامة|تحقق|وثيقة|مستند|ارفع|رفع|نموذج|استبيان|عبّئ|عبئ|آخر موعد|deadline|submit|upload|verify|register|payment|أكمل|اكمل|renew'
+$EXAM_RE = 'اختبار|كويز|امتحان|exam|quiz|midterm|final exam'
+
 $HELP = @"
 🤖 بوت بريد الجامعة (قراءة فقط)
 
-/check — افحص الآن وأرسل الجديد
-/unread — الرسائل غير المقروءة
-/last N — آخر N رسالة (افتراضي 10)
-/search كلمة — ابحث في كل المجلدات
-/time 10:00,18:00 — غيّر وقت التقارير المجدولة
-/alerts on|off — تشغيل/إيقاف تنبيهات الرسائل المهمة فورًا
-/status — حالة البوت والإعدادات
-/help — هذه القائمة
+🆕 /check — الجديد من آخر تشغيل (مع علامة المطلوب)
+📌 /action — رسائل تحتاج منك إجراء
+📝 /exams — مواعيد الاختبارات والكوِزات
+🔵 /unread — غير المقروء
+📥 /last 10 — آخر 10 رسائل
+📖 /read 3 — نص رسالة (رقم من /last)
+🔎 /search كلمة — بحث في كل المجلدات
+🎓 /course GR101 — رسائل مقرر معين
+⏰ /time 10:00,18:00 — وقت التقارير
+🔔 /alerts on|off — تنبيهات المهم فوراً
 "@
 
 function Handle([string]$text) {
   $text = "$text".Trim()
+  if (-not $text) { return }
   $parts = $text -split '\s+', 2
-  $cmd = $parts[0].ToLower()
+  $raw = $parts[0].ToLower().TrimStart('/')
   $arg = if ($parts.Count -gt 1) { $parts[1].Trim() } else { '' }
-  switch -Regex ($cmd) {
-    '^/(start|help)$' { Send-Text $HELP }
-    '^/(check|now)$' { Send-Text '⏳ جارٍ الفحص...'; Send-Digest -Update }
-    '^/unread$' {
+  $cmd = if ($ALIAS.ContainsKey($raw)) { $ALIAS[$raw] } else { $raw }
+
+  switch ($cmd) {
+    'help' { Send-Text $HELP }
+    'check' {
+      Send-Text '⏳ جارٍ الفحص...'
+      Send-Digest -Update
+    }
+    'action' {
+      $since = (Get-Date).AddDays(-30).ToString('s')
+      $rows = EngineJson @('-Cmd', 'search', '-Scope', 'all', '-Regex', '-Query', $ACTION_RE, '-Since', $since, '-Json', '-N', '15')
+      $body = Format-Rows $rows 15
+      Send-Text ("📌 رسائل يبدو أنها تحتاج إجراء (آخر 30 يوم)`n`n" + $(if ($body) { $body } else { '(لا شيء)' }))
+    }
+    'exams' {
+      $since = (Get-Date).AddDays(-90).ToString('s')
+      $rows = EngineJson @('-Cmd', 'search', '-Scope', 'all', '-Regex', '-Query', $EXAM_RE, '-Since', $since, '-Json', '-N', '15')
+      $body = Format-Rows $rows 15
+      Send-Text ("📝 مواعيد الاختبارات والكوِزات`n`n" + $(if ($body) { $body } else { '(لا يوجد)' }))
+    }
+    'unread' {
       $rows = EngineJson @('-Cmd', 'unread', '-Json', '-N', '10')
       $body = Format-Rows $rows 10
       Send-Text ("🔵 غير مقروء`n`n" + $(if ($body) { $body } else { '(لا شيء)' }))
     }
-    '^/last$' {
+    'last' {
       $n = if ($arg -match '^\d+$') { [int]$arg } else { 10 }
       if ($n -gt 30) { $n = 30 }
       $rows = EngineJson @('-Cmd', 'list', '-Json', '-N', "$n")
       Send-Text ("📥 آخر $n رسالة`n`n" + (Format-Rows $rows $n))
     }
-    '^/search$' {
+    'read' {
+      if ($arg -notmatch '^\d+$') { Send-Text 'اكتب رقم الرسالة من /last — مثال: /read 3'; return }
+      $n = [int]$arg; if ($n -lt 1) { $n = 1 }; if ($n -gt 30) { $n = 30 }
+      $rows = EngineJson @('-Cmd', 'list', '-Json', '-N', "$n")
+      if (@($rows).Count -lt $n) { Send-Text 'ما فيه رسالة بهذا الرقم. استخدم /last'; return }
+      $id = @($rows)[$n - 1].id
+      Send-Text (Engine @('-Cmd', 'read', '-Id', $id))
+    }
+    'search' {
       if (-not $arg) { Send-Text 'اكتب: /search كلمة'; return }
       $rows = EngineJson @('-Cmd', 'search', '-Scope', 'all', '-Query', $arg, '-Json', '-N', '8')
       $body = Format-Rows $rows 8
       Send-Text ("🔎 نتائج: $arg`n`n" + $(if ($body) { $body } else { '(لا نتائج)' }))
     }
-    '^/time$' {
+    'course' {
+      if (-not $arg) { Send-Text 'اكتب رمز المقرر: /course GR101'; return }
+      $rows = EngineJson @('-Cmd', 'search', '-Scope', 'all', '-Query', $arg, '-Json', '-N', '10')
+      $body = Format-Rows $rows 10
+      Send-Text ("🎓 مقرر $arg`n`n" + $(if ($body) { $body } else { '(لا رسائل)' }))
+    }
+    'time' {
       if (-not $arg) { Send-Text "الأوقات الحالية: $((@($cfg.times)) -join ', ')`nللتغيير: /time 09:00,21:00"; return }
       $newTimes = @($arg -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^\d{1,2}:\d{2}$' })
       if ($newTimes.Count -eq 0) { Send-Text 'صيغة خاطئة. مثال: /time 09:00,21:00'; return }
@@ -187,30 +239,16 @@ function Handle([string]$text) {
       $script:cfg = $c
       Send-Text "✅ صار وقت التقرير: $($newTimes -join ', ')"
     }
-    '^/alerts$' {
+    'alerts' {
       $c = Get-Cfg
-      if ($arg.ToLower() -eq 'on') { $c.alert_importance = 'High'; $script:cfg = $c }
-      elseif ($arg.ToLower() -eq 'off') { $c.alert_importance = 'off'; $script:cfg = $c }
+      if ($arg.ToLower() -eq 'on') { $c.alert_importance = 'High' }
+      elseif ($arg.ToLower() -eq 'off') { $c.alert_importance = 'off' }
+      else { Send-Text "تنبيهات المهم: $($c.alert_importance) — استخدم /alerts on|off"; return }
       [IO.File]::WriteAllText($Config, (ConvertTo-Json -InputObject $c -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
-      Send-Text "تنبيهات المهم: $($c.alert_importance)"
+      $script:cfg = $c
+      Send-Text "🔔 تنبيهات المهم: $($c.alert_importance)"
     }
-    '^/status$' {
-      $c = Get-Cfg
-      $unread = 0; try { $unread = @(EngineJson @('-Cmd','unread','-Json','-N','100')).Count } catch {}
-      $last = if (Test-Path $StateFile) { "$(Get-Content $StateFile -Raw -Encoding UTF8)".Trim() } else { '(أبدًا)' }
-      $txt = @(
-        '⚙️ حالة البوت',
-        "الحساب: $(Engine @('-Cmd','whoami'))",
-        "أوقات التقرير: $((@($c.times)) -join ', ')",
-        "تنبيهات المهم: $($c.alert_importance)",
-        "آخر تقرير: $last",
-        "غير مقروء: $unread",
-        "بيانات: $DataDir"
-      ) -join "`n"
-      Send-Text $txt
-    }
-    '^/id$' { Send-Text "chat_id = $($script:chat)" }
-    default { Send-Text "أمر غير معروف: $cmd`n`n$HELP" }
+    default { Send-Text "أمر غير معروف: $raw`n`n$HELP" }
   }
 }
 
@@ -219,13 +257,15 @@ $offset = 0
 if (Test-Path $OffsetFile) { $raw = "$(Get-Content $OffsetFile -Raw -Encoding UTF8)".Trim(); if ($raw -match '^\d+$') { $offset = [int]$raw } }
 function Save-Offset([int]$v) { [IO.File]::WriteAllText($OffsetFile, "$v", (New-Object System.Text.UTF8Encoding($false))) }
 
+if ($Cmd) { Handle $Cmd; Log "cmd test: $Cmd"; exit 0 }
+
 if ($Test) {
-  Send-Text "🧪 اختبار البوت — بأرسل لك أوامر"
-  Handle '/status'
+  Send-Text "🧪 اختبار البوت الجديد"
+  Handle '/help'
+  Handle '/action'
+  Handle '/exams'
   Handle '/unread'
   Handle '/last 3'
-  Send-Digest -Update
-  Handle '/time'
   # confirm and clear pending updates so the normal run does not replay them
   try { $r = Tg 'getUpdates' @{ offset = $offset; timeout = 0; allowed_updates = @('message') } 20; foreach ($u in @($r.result)) { $offset = [int]$u.update_id + 1 } } catch {}
   Save-Offset $offset

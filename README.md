@@ -168,22 +168,32 @@ Get `chat_id`: send any message to the bot, then open
 
 ### Commands
 
-| Command | Action |
-|---|---|
-| `/check` | Check now and send the new mail |
-| `/unread` | List unread messages |
-| `/last N` | Last N messages |
-| `/search word` | Search every mail folder |
-| `/time 10:00,18:00` | Change the digest schedule |
-| `/alerts on|off` | Toggle real-time important-mail alerts |
-| `/status` | Show config and state |
-| `/help` | Command list |
+ASCII names (for the Telegram `/` menu) with Arabic aliases.
+
+| Command | Arabic | Action |
+|---|---|---|
+| `/check` | `/جديد` | New mail since the last run |
+| `/action` | `/المطلوب` | Messages that look like they need an action |
+| `/exams` | `/الاختبارات` | Exam / quiz announcements |
+| `/unread` | `/غير_مقروء` | Unread messages |
+| `/last N` | `/آخر` | Last N messages (default 10) |
+| `/read N` | `/قراءة` | Full text of message N from `/last` |
+| `/search word` | `/بحث` | Search every mail folder |
+| `/course CODE` | `/مقرر` | Messages about a course, e.g. `GR101` |
+| `/time 10:00,18:00` | `/وقت` | Change the digest schedule |
+| `/alerts on|off` | `/تنبيه` | Toggle real-time important-mail alerts |
+| `/help` | `/مساعدة` | Command list |
+
+`/action` and `/exams` are the student-focused ones: they scan recent mail for
+action/deadline/exam keywords and list what matters. The engine supports the
+pattern search they use via `mail search -Regex -Query "اختبار|كويز"`.
 
 ### Install / run
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File bot.ps1 -Test   # send a test batch
-powershell -ExecutionPolicy Bypass -File register-bot.ps1 # resident at logon
+powershell -ExecutionPolicy Bypass -File bot.ps1 -Test        # send a test batch
+powershell -ExecutionPolicy Bypass -File bot.ps1 -Cmd "exams" # run one command
+powershell -ExecutionPolicy Bypass -File register-bot.ps1     # resident at logon
 powershell -ExecutionPolicy Bypass -File register-bot.ps1 -Remove
 ```
 
