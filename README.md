@@ -34,7 +34,15 @@ administrator. That is exactly what this tool does.
 |---|---|
 | `outlook-read.ps1` | The engine (read-only). Runnable on its own. |
 | `mail` | Thin bash wrapper (nice argument passing). |
+| `skills/outlook-read/SKILL.md` | Agent Skill — lets an AI agent use the CLI correctly and safely. |
 | `README.md` | This file. |
+
+## Agent skill
+
+`skills/outlook-read/SKILL.md` is an [Agent Skill](https://code.claude.com/docs/en/skills)
+describing how an AI assistant (Claude Code, Codex, pi, …) should drive this CLI:
+commands, flags, workflows, JSON output, and the read-only safety rules. Point your
+agent's skills directory at `skills/outlook-read/` (or copy it there).
 
 ## Quick start
 
