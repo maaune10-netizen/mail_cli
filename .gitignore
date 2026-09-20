@@ -2,6 +2,12 @@
 *.tmp
 *.log
 
+# local report artifacts
+reports/
+_rep.txt
+_*.json
+_*.txt
+
 # OS files
 .DS_Store
 Thumbs.db

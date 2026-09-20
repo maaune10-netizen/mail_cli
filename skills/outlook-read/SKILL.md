@@ -63,6 +63,7 @@ installed, not signed in, or is the "new Outlook" (which has no COM).
 | `attachment-save -Id <entryid> [-Index n] [-Dest dir] [-Json]` | Save attachment copy to a **local** temp folder |
 | `calendar [-N n] [-Offset k] [-Since d] [-Before d] [-Json]` | Calendar items |
 | `contacts [-N n] [-Offset k] [-Json]` | Contacts |
+| `report [-Folder N] [-N n] [-Hours 12] [-State f] [-Out f] [-Update]` | Daily digest of new messages (Arabic) |
 | `help` | Usage |
 
 Flags:
@@ -156,6 +157,17 @@ size to tell the user what is attached.
 ./mail calendar -N 20 -Since 2026-09-01
 ./mail contacts -N 50
 ```
+
+### Daily digest (for scheduled runs / notifications)
+
+```bash
+./mail report -N 50               # messages newer than the last run
+./mail report -Out report.txt -Update   # write file + advance the state
+```
+
+Use this when the user asks for a periodic digest or a "what's new" summary.
+The output is ready to forward to the user (or a notifier). Always summarize it
+in the user's own words using the rules below.
 
 ## Summarizing messages for the user
 

@@ -34,6 +34,7 @@ administrator. That is exactly what this tool does.
 |---|---|
 | `outlook-read.ps1` | The engine (read-only). Runnable on its own. |
 | `mail` | Thin bash wrapper (nice argument passing). |
+| `register-report.ps1` | Registers the twice-daily report task in Windows Task Scheduler. |
 | `skills/outlook-read/SKILL.md` | Agent Skill — lets an AI agent use the CLI correctly and safely. |
 | `README.md` | This file. |
 
@@ -77,6 +78,7 @@ export PATH="$HOME/tools/mail:$PATH"
 | `attachment-save -Id <entryid> [-Index n] [-Dest dir] [-Json]` | Save attachment copy to a **local** temp folder |
 | `calendar [-N n] [-Offset k] [-Since d] [-Before d] [-Json]` | Calendar items |
 | `contacts [-N n] [-Offset k] [-Json]` | Contacts |
+| `report [-Folder N] [-N n] [-Hours 12] [-State f] [-Out f] [-Update]` | Daily digest of new messages (Arabic) |
 | `help` | Usage |
 
 Flags: `-Since` / `-Before` accept `YYYY-MM-DD` or ISO. `-Scope all` searches
@@ -103,6 +105,35 @@ Example output (`list`):
 [1] * 2026-09-19 22:12 | Course Bot <lms.smtp@example.edu> | Lecture recording GR101 [2 att] | id=0000...
 [2]   2026-09-18 19:31 | Activities Team <team@example.edu> | Workshop reminder | id=0000...
 ```
+
+## Scheduled daily report
+
+`report` prints a short digest of messages newer than the last run. The last
+run time is stored in a state file, so each report covers only the new window;
+`-Update` advances the state.
+
+```bash
+./mail report                       # since last run (or last 12h)
+./mail report -Hours 24 -N 50
+./mail report -Out report.txt -Update
+```
+
+`register-report.ps1` creates a Windows Task Scheduler task that runs the
+read-only report **twice a day** (default 10:00 and 18:00) and writes it to
+`%LOCALAPPDATA%\outlook-read\last-report.txt`. It runs in the user's session
+(only when logged on) so Classic Outlook COM is available.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File register-report.ps1
+powershell -ExecutionPolicy Bypass -File register-report.ps1 -Times 09:00,21:00
+powershell -ExecutionPolicy Bypass -File register-report.ps1 -Remove
+```
+
+```powershell
+Start-ScheduledTask -TaskName AOU-Mail-Report   # run now to test
+```
+
+This is the text that a Telegram bot (or any notifier) can send later.
 
 ## Read-only guarantee
 

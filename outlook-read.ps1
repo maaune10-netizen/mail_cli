@@ -8,7 +8,7 @@
 # JSON output, cross-folder search (-Scope all), HTML->text fallback,
 # message metadata (importance/categories/flag), link extraction.
 param(
-  [ValidateSet('help','doctor','whoami','folders','list','unread','search','read','digest','attachments','attachment-save','links','calendar','contacts')]
+  [ValidateSet('help','doctor','whoami','folders','list','unread','search','read','digest','attachments','attachment-save','links','calendar','contacts','report')]
   [string]$Cmd = 'list',
   [string]$Id = '',
   [string]$Query = '',
@@ -20,6 +20,10 @@ param(
   [string]$Scope = '',
   [int]$Index = -1,
   [string]$Dest = '',
+  [string]$State = '',
+  [string]$Out = '',
+  [int]$Hours = 12,
+  [switch]$Update,
   [switch]$Json
 )
 $ErrorActionPreference = 'Stop'
@@ -278,9 +282,11 @@ Commands:
   links   -Id <entryid> [-Json]
   calendar [-N n] [-Offset k] [-Since d] [-Before d] [-Json]
   contacts [-N n] [-Offset k] [-Json]
+  report  [-Folder N] [-N n] [-Hours 12] [-State file] [-Out file] [-Update]
 
 Dates: YYYY-MM-DD or ISO.  -Scope all searches every mail folder.
 attachment-save writes a copy to a LOCAL temp folder only (never the mailbox).
+report prints an Arabic digest of messages newer than the last run (state file).
 "@
   }
   'doctor' {
@@ -405,6 +411,67 @@ attachment-save writes a copy to a LOCAL temp folder only (never the mailbox).
       $saved += [pscustomobject]@{ index = $n; file = $path; size = $a.Size }
     }
     if ($Json) { JsonArr $saved } else { $saved | ForEach-Object { "saved=$($_.file) size=$($_.size)" } }
+  }
+  'report' {
+    $now = Get-Date
+    if (-not $State) {
+      $dir = Join-Path $env:LOCALAPPDATA 'outlook-read'
+      New-Item -ItemType Directory -Force -Path $dir | Out-Null
+      $State = Join-Path $dir 'last-run.txt'
+    }
+    $from = $sinceD
+    if (-not $from -and (Test-Path $State)) {
+      $raw = Get-Content $State -Raw -ErrorAction SilentlyContinue
+      if ($raw) { $raw = "$raw".Trim(); if ($raw) { try { $from = [datetime]::Parse($raw) } catch {} } }
+    }
+    if (-not $from) { $from = $now.AddHours(-1 * $Hours) }
+
+    $f = Resolve-Folder $Folder
+    $it = $f.Items; try { $it.Sort('[ReceivedTime]', $true) } catch {}
+    $new = @()
+    foreach ($m in $it) {
+      $d = GetVal { $m.ReceivedTime } $null
+      if (-not $d) { continue }
+      if ($d -le $from) { break }   # sorted newest-first
+      $new += $m
+      if ($new.Count -ge $N) { break }
+    }
+    $totalUnread = [int](GetVal { $f.Items.Restrict('[Unread]=true').Count } 0)
+
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.AppendLine("📬 تقرير بريد الجامعة")
+    [void]$sb.AppendLine("🕒 $($now.ToString('yyyy-MM-dd HH:mm'))")
+    [void]$sb.AppendLine("📅 الجديد منذ: $($from.ToString('yyyy-MM-dd HH:mm'))")
+    if ($new.Count -eq 0) {
+      [void]$sb.AppendLine("")
+      [void]$sb.AppendLine("✅ لا رسائل جديدة.")
+    } else {
+      [void]$sb.AppendLine("")
+      [void]$sb.AppendLine("📥 الجديد: $($new.Count) رسالة")
+      [void]$sb.AppendLine("──────────────────────")
+      $i = 0
+      foreach ($m in $new) {
+        $i++
+        $d = GetVal { $m.ReceivedTime } $now
+        $u = if (GetVal { $m.Unread } $false) { '🔵' } else { '⚪' }
+        $imp = Get-Importance $m; if ($imp -eq 'Normal') { $imp = '' } else { $imp = " [$imp]" }
+        [void]$sb.AppendLine("$u [$i] $($d.ToString('MM-dd HH:mm')) | $(GetVal { $m.SenderName } '')$imp")
+        [void]$sb.AppendLine("     $(GetVal { $m.Subject } '(بدون موضوع)')")
+        $snip = P (Get-BodyText $m) 200
+        if ($snip) { [void]$sb.AppendLine("     ↳ $snip") }
+        [void]$sb.AppendLine("")
+      }
+    }
+    [void]$sb.AppendLine("──────────────────────")
+    [void]$sb.AppendLine("📥 إجمالي غير المقروء بالصندوق: $totalUnread")
+    $text = $sb.ToString()
+    Write-Output $text
+    if ($Out) {
+      $od = Split-Path -Parent $Out
+      if ($od) { New-Item -ItemType Directory -Force -Path $od | Out-Null }
+      [IO.File]::WriteAllText($Out, $text, (New-Object System.Text.UTF8Encoding($false)))
+    }
+    if ($Update) { [IO.File]::WriteAllText($State, $now.ToString('o'), (New-Object System.Text.UTF8Encoding($false))) }
   }
   'calendar' {
     $f = Resolve-Folder '' 9
