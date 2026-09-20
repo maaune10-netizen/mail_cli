@@ -158,31 +158,68 @@ $ALIAS = @{
 $ACTION_RE = 'مطلوب|يجب عليك|الرجاء|يرجى|تسجيل|سجّل|دفع|رسوم|غرامة|تحقق|وثيقة|مستند|ارفع|رفع|نموذج|استبيان|عبّئ|عبئ|آخر موعد|deadline|submit|upload|verify|register|payment|أكمل|اكمل|renew'
 $EXAM_RE = 'اختبار|كويز|امتحان|exam|quiz|midterm|final exam'
 
-$HELP = @"
-🤖 بوت بريد الجامعة (قراءة فقط)
+$script:pending = ''
+# Tap-only menu (no typing). Telegram sends the label back as a message.
+$BUTTONS = [ordered]@{
+  '🆕 الجديد'     = 'check'
+  '📌 المطلوب'     = 'action'
+  '📝 الاختبارات'  = 'exams'
+  '🔵 غير المقروء' = 'unread'
+  '📥 آخر الرسائل' = 'last'
+  '🔎 بحث'         = 'search'
+  '🎓 مقرر'        = 'course'
+  '⏰ الأوقات'     = 'time'
+  '🔔 التنبيهات'   = 'alerts'
+  '❓ مساعدة'      = 'help'
+}
 
-🆕 /check — الجديد من آخر تشغيل (مع علامة المطلوب)
-📌 /action — رسائل تحتاج منك إجراء
-📝 /exams — مواعيد الاختبارات والكوِزات
-🔵 /unread — غير المقروء
-📥 /last 10 — آخر 10 رسائل
-📖 /read 3 — نص رسالة (رقم من /last)
-🔎 /search كلمة — بحث في كل المجلدات
-🎓 /course GR101 — رسائل مقرر معين
-⏰ /time 10:00,18:00 — وقت التقارير
-🔔 /alerts on|off — تنبيهات المهم فوراً
+function Send-Menu([string]$text) {
+  $rows = @(
+    @('🆕 الجديد', '📌 المطلوب'),
+    @('📝 الاختبارات', '🔵 غير المقروء'),
+    @('📥 آخر الرسائل', '🔎 بحث'),
+    @('🎓 مقرر', '⏰ الأوقات'),
+    @('🔔 التنبيهات', '❓ مساعدة')
+  )
+  $markup = @{ keyboard = $rows; resize_keyboard = $true; is_persistent = $true }
+  [void](Tg 'sendMessage' @{ chat_id = $script:chat; text = $text; reply_markup = $markup })
+}
+
+$HELP = @"
+🤖 بوت بريد الجامعة — كل شي بأزرار، بلا كتابة
+
+🆕 الجديد — الرسائل الجديدة من آخر تشغيل
+📌 المطلوب — رسائل تحتاج منك إجراء
+📝 الاختبارات — مواعيد الاختبارات والكوِزات
+🔵 غير المقروء — الرسائل غير المقروءة
+📥 آخر الرسائل — آخر 10
+🔎 بحث / 🎓 مقرر — يطلبان منك كلمة واحدة
+⏰ الأوقات — تغيير وقت التقارير
+🔔 التنبيهات — تنبيهات المهم فوراً
 "@
 
 function Handle([string]$text) {
   $text = "$text".Trim()
   if (-not $text) { return }
-  $parts = $text -split '\s+', 2
-  $raw = $parts[0].ToLower().TrimStart('/')
-  $arg = if ($parts.Count -gt 1) { $parts[1].Trim() } else { '' }
-  $cmd = if ($ALIAS.ContainsKey($raw)) { $ALIAS[$raw] } else { $raw }
+
+  $arg = ''
+  if ($BUTTONS.Contains($text)) {
+    $cmd = $BUTTONS[$text]
+  }
+  elseif ($script:pending -and -not $text.StartsWith('/')) {
+    $cmd = $script:pending
+    $arg = $text
+    $script:pending = ''
+  }
+  else {
+    $parts = $text -split '\s+', 2
+    $key = $parts[0].ToLower().TrimStart('/')
+    if ($parts.Count -gt 1) { $arg = $parts[1].Trim() }
+    $cmd = if ($ALIAS.ContainsKey($key)) { $ALIAS[$key] } else { $key }
+  }
 
   switch ($cmd) {
-    'help' { Send-Text $HELP }
+    'help' { Send-Menu $HELP }
     'check' {
       Send-Text '⏳ جارٍ الفحص...'
       Send-Digest -Update
@@ -205,8 +242,7 @@ function Handle([string]$text) {
       Send-Text ("🔵 غير مقروء`n`n" + $(if ($body) { $body } else { '(لا شيء)' }))
     }
     'last' {
-      $n = if ($arg -match '^\d+$') { [int]$arg } else { 10 }
-      if ($n -gt 30) { $n = 30 }
+      $n = if ($arg -match '^\d+$') { [int]$arg } else { 10 }      if ($n -gt 30) { $n = 30 }
       $rows = EngineJson @('-Cmd', 'list', '-Json', '-N', "$n")
       Send-Text ("📥 آخر $n رسالة`n`n" + (Format-Rows $rows $n))
     }
@@ -219,13 +255,13 @@ function Handle([string]$text) {
       Send-Text (Engine @('-Cmd', 'read', '-Id', $id))
     }
     'search' {
-      if (-not $arg) { Send-Text 'اكتب: /search كلمة'; return }
+      if (-not $arg) { $script:pending = 'search'; Send-Text '🔎 اكتب كلمة البحث 👇'; return }
       $rows = EngineJson @('-Cmd', 'search', '-Scope', 'all', '-Query', $arg, '-Json', '-N', '8')
       $body = Format-Rows $rows 8
       Send-Text ("🔎 نتائج: $arg`n`n" + $(if ($body) { $body } else { '(لا نتائج)' }))
     }
     'course' {
-      if (-not $arg) { Send-Text 'اكتب رمز المقرر: /course GR101'; return }
+      if (-not $arg) { $script:pending = 'course'; Send-Text '🎓 اكتب رمز المقرر (مثل GR101) 👇'; return }
       $rows = EngineJson @('-Cmd', 'search', '-Scope', 'all', '-Query', $arg, '-Json', '-N', '10')
       $body = Format-Rows $rows 10
       Send-Text ("🎓 مقرر $arg`n`n" + $(if ($body) { $body } else { '(لا رسائل)' }))
@@ -248,7 +284,7 @@ function Handle([string]$text) {
       $script:cfg = $c
       Send-Text "🔔 تنبيهات المهم: $($c.alert_importance)"
     }
-    default { Send-Text "أمر غير معروف: $raw`n`n$HELP" }
+    default { Send-Menu "ما فهمت: $cmd`n`n$HELP" }
   }
 }
 
@@ -276,7 +312,7 @@ if ($Test) {
 $lastPoll = [datetime]::MinValue
 $fired = @{}
 Log "bot started (repo=$Repo, once=$Once)"
-Send-Text "🟢 بدأ البوت. أرسل /help للأوامر."
+Send-Menu "🟢 البوت شغّال. اختر من الأزرار 👇"
 
 while ($true) {
   try {

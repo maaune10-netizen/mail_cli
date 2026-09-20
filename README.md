@@ -168,7 +168,9 @@ Get `chat_id`: send any message to the bot, then open
 
 ### Commands
 
-ASCII names (for the Telegram `/` menu) with Arabic aliases.
+Send `/start` once: the bot shows a **persistent keyboard of Arabic
+buttons**, so normal use needs **no typing at all** — just tap. Typing still
+works: ASCII names with Arabic aliases.
 
 | Command | Arabic | Action |
 |---|---|---|
