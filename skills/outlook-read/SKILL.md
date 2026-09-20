@@ -91,7 +91,8 @@ Plain output per line:
 [n] <unread*> <date> | <from name> <from email> | <subject> <High>{categories} [N att] | id=<entryid>
 ```
 
-`-Json` adds `importance`, `categories` and `flag` to every message record.
+`-Json` adds `importance`, `categories`, `flag`, and (with `-Snippet`) a
+`score` (0–10) + `level` (🔴/🟠/🟡/🟢) importance rating.
 
 ### Search
 

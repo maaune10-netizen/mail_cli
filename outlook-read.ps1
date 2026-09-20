@@ -117,6 +117,37 @@ function Get-Links($m) {
   return ($urls | Select-Object -Unique)
 }
 
+# ---- watchdog scoring (0-10) ----
+$script:SC_EXAM  = 'اختبار|اختبارات|كويز|امتحان|exam|quiz|midterm|final exam'
+$script:SC_TIME  = 'آخر موعد|ينتهي|يُغلق|يغلق|deadline|الموافق|حتى|قبل يوم|قبل موعد'
+$script:SC_MONEY = 'دفع|سداد|رسوم|غرامة|ريال|مبلغ|payment|fee'
+$script:SC_ACT   = 'مطلوب|يجب عليك|الرجاء|يرجى|تسجيل|سجّل|تحقق|وثيقة|مستند|ارفع|رفع|نموذج|استبيان|عبّئ|عبئ|submit|upload|verify|register|أكمل|اكمل|renew'
+$script:SC_JUNK  = 'unsubscribe|إلغاء الاشتراك|تجربة مجانية|عروض حصرية|خصم|تخفيض|اشترك الآن|webinar|promo code|best features|free trial|Notion|Cursor'
+
+function Get-Score([string]$subject, [string]$text, [string]$fromEmail, [string]$importance, [string]$flag, [int]$att, [bool]$unread) {
+  $s = 0
+  $all = "$subject`n$text"
+  if ($all -match $script:SC_EXAM) { $s += 4 }
+  if ($all -match $script:SC_TIME) { $s += 2 }
+  if ($all -match $script:SC_MONEY) { $s += 2 }
+  if ($all -match $script:SC_ACT) { $s += 2 }
+  if ($fromEmail -match '(?i)aou\.edu\.sa|arabou') { $s += 2 }
+  if ($importance -eq 'High') { $s += 3 }
+  if ($flag -eq 'Flagged') { $s += 2 }
+  if ($att -gt 0) { $s += 1 }
+  if ($unread) { $s += 1 }
+  if ($all -match $script:SC_JUNK) { $s -= 4 }
+  if ($s -gt 10) { $s = 10 }
+  if ($s -lt 0) { $s = 0 }
+  return [int]$s
+}
+function Get-Level([int]$s) {
+  if ($s -ge 9) { return '🔴 عاجل' }
+  if ($s -ge 7) { return '🟠 مهم' }
+  if ($s -ge 5) { return '🟡 متوسط' }
+  return '🟢 عادي'
+}
+
 # default-folder aliases (OlDefaultFolders)
 $DEFAULT_FOLDERS = @{
   'inbox' = 6; 'sent' = 5; 'sentitems' = 5; 'drafts' = 16; 'deleteditems' = 23;
@@ -191,18 +222,28 @@ function Build-Records($items, [string]$kind, [int]$max, [int]$skip, [bool]$json
     } elseif ($kind -eq 'contact') {
       $recs += [pscustomobject]@{ n = $taken; name = (GetVal { $m.FullName } ''); email = (GetVal { $m.Email1Address } ''); id = (GetVal { $m.EntryID } '') }
     } else {
+      $subj = GetVal { $m.Subject } ''
+      $fromEmail = Get-FromEmail $m
+      $imp = Get-Importance $m
+      $flg = Get-Flag $m
+      $attn = [int](GetVal { $m.Attachments.Count } 0)
+      $unr = [bool](GetVal { $m.Unread } $false)
+      $bodyText = if ($script:snippet) { Get-BodyText $m } else { '' }
+      $sc = if ($script:snippet) { Get-Score $subj $bodyText $fromEmail $imp $flg $attn $unr } else { $null }
       $recs += [pscustomobject]@{
         n           = $taken
-        unread      = [bool](GetVal { $m.Unread } $false)
+        unread      = $unr
         date        = $dateStr
         from        = GetVal { $m.SenderName } ''
-        fromEmail   = Get-FromEmail $m
-        subject     = GetVal { $m.Subject } ''
-        importance  = Get-Importance $m
+        fromEmail   = $fromEmail
+        subject     = $subj
+        importance  = $imp
         categories  = Get-Categories $m
-        flag        = Get-Flag $m
-        attachments = [int](GetVal { $m.Attachments.Count } 0)
-        snippet     = if ($script:snippet) { P (Get-BodyText $m) 220 } else { $null }
+        flag        = $flg
+        score       = $sc
+        level       = if ($script:snippet) { Get-Level $sc } else { $null }
+        attachments = $attn
+        snippet     = if ($script:snippet) { P $bodyText 220 } else { $null }
         id          = GetVal { $m.EntryID } ''
       }
     }
@@ -216,9 +257,10 @@ function Build-Records($items, [string]$kind, [int]$max, [int]$skip, [bool]$json
     else {
       $u = if ($r.unread) { '*' } else { ' ' }
       $a = if ($r.attachments -gt 0) { " [$($r.attachments) att]" } else { '' }
+      $lvl = ''; if ($r.level) { $lvl = "[$($r.score)/10 $($r.level)] " }
       $imp = if ($r.importance -ne 'Normal') { " <$($r.importance)>" } else { '' }
       $cat = if ($r.categories) { " {$($r.categories)}" } else { '' }
-      $lines += "[$($r.n)] $u $($r.date) | $(P $r.from 35) <$(P $r.fromEmail 35)> | $(P $r.subject 90)$imp$cat$a | id=$($r.id)"
+      $lines += "[$($r.n)] $u $lvl$($r.date) | $(P $r.from 35) <$(P $r.fromEmail 35)> | $(P $r.subject 90)$imp$cat$a | id=$($r.id)"
     }
   }
   return ($lines -join "`n")
@@ -458,8 +500,9 @@ report prints an Arabic digest of messages newer than the last run (state file).
         $i++
         $d = GetVal { $m.ReceivedTime } $now
         $u = if (GetVal { $m.Unread } $false) { '🔵' } else { '⚪' }
-        $imp = Get-Importance $m; if ($imp -eq 'Normal') { $imp = '' } else { $imp = " [$imp]" }
-        [void]$sb.AppendLine("$u [$i] $($d.ToString('MM-dd HH:mm')) | $(GetVal { $m.SenderName } '')$imp")
+        $bt = Get-BodyText $m
+        $sc = Get-Score (GetVal { $m.Subject } '') $bt (Get-FromEmail $m) (Get-Importance $m) (Get-Flag $m) ([int](GetVal { $m.Attachments.Count } 0)) ([bool](GetVal { $m.Unread } $false))
+        [void]$sb.AppendLine("$u [$i] [$sc/10 $(Get-Level $sc)] $($d.ToString('MM-dd HH:mm')) | $(GetVal { $m.SenderName } '')")
         [void]$sb.AppendLine("     $(GetVal { $m.Subject } '(بدون موضوع)')")
         $snip = P (Get-BodyText $m) 200
         if ($snip) { [void]$sb.AppendLine("     ↳ $snip") }

@@ -203,6 +203,25 @@ The 🔔 التنبيهات button cycles off → important → all. `poll_secon
 60) controls how fast mail is noticed; a new message is detected within one
 poll interval.
 
+### Importance score (the watchdog)
+
+Every message gets a heuristic score **0–10** and a level, shown at the top of
+every alert and in the digest:
+
+| Score | Level |
+|---|---|
+| 9–10 | 🔴 عاجل |
+| 7–8 | 🟠 مهم |
+| 5–6 | 🟡 متوسط |
+| 0–4 | 🟢 عادي |
+
+Signals: exam/quiz (+4), deadline wording (+2), payment/fees (+2), action
+keywords (+2), official AOU/Arabou sender (+2), High importance (+3), flagged
+(+2), attachments (+1), unread (+1); marketing wording (−4).
+
+The score is available in `list -Json -Snippet` as `score` + `level`, and is
+used to decide whether `alert_mode = important` fires.
+
 ### Install / run
 
 ```powershell

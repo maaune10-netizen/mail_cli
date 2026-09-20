@@ -129,21 +129,23 @@ function Check-Alerts {
   $sent = 0
   foreach ($r in $rows) {
     if ($alerted -contains $r.id) { continue }
-    $reasons = @()
-    if ("$($r.importance)" -eq 'High') { $reasons += 'أهمية عالية' }
-    if ($cfg.alert_flagged -and "$($r.flag)" -eq 'Flagged') { $reasons += 'معلّمة' }
-    if ("$($r.subject) $($r.snippet)" -match $re) { $reasons += 'تحتاج انتباه' }
-    $isImportant = $reasons.Count -gt 0
-    # mode 'important' -> only flagged-by-content; mode 'all' -> every new mail
+    $score = 0; if ($r.score -ne $null) { $score = [int]$r.score }
+    $level = "$($r.level)"
+    $isImportant = ($score -ge 7)
+    if ("$($r.importance)" -eq 'High') { $isImportant = $true }
+    if ($cfg.alert_flagged -and "$($r.flag)" -eq 'Flagged') { $isImportant = $true }
+    if (-not $isImportant -and ("$($r.subject) $($r.snippet)" -match $re)) { $isImportant = $true; if ($score -lt 5) { $score = 5; $level = '🟡 متوسط' } }
+    if (-not $level) { $level = '🟢 عادي' }
+    # mode 'important' -> only important; mode 'all' -> every new mail
     if ($script:alertMode -eq 'important' -and -not $isImportant) { continue }
 
     if ($isImportant) {
       $full = EngineJson @('-Cmd', 'read', '-Json', '-Id', $r.id)
       $body = "$($full.body)"; if (-not $body) { $body = "$($r.snippet)" }
-      $msg = "🚨 رسالة مهمة ($($reasons -join ' + '))`n`nمن: $($r.from) <$($r.fromEmail)>`nالتاريخ: $($r.date)`nالموضوع: $($r.subject)`n`n$body"
+      $msg = "🚨 [$score/10 $level]`n`nمن: $($r.from) <$($r.fromEmail)>`nالتاريخ: $($r.date)`nالموضوع: $($r.subject)`n`n$body"
     } else {
       $snip = "$($r.snippet)"; if ($snip.Length -gt 400) { $snip = $snip.Substring(0, 400) + '...' }
-      $msg = "📧 رسالة جديدة`n`nمن: $($r.from) <$($r.fromEmail)>`nالتاريخ: $($r.date)`nالموضوع: $($r.subject)"
+      $msg = "📧 [$score/10 $level] رسالة جديدة`n`nمن: $($r.from) <$($r.fromEmail)>`nالتاريخ: $($r.date)`nالموضوع: $($r.subject)"
       if ($snip) { $msg += "`n`n$snip" }
     }
     Send-Text $msg
