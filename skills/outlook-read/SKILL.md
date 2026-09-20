@@ -157,6 +157,71 @@ size to tell the user what is attached.
 ./mail contacts -N 50
 ```
 
+## Summarizing messages for the user
+
+A summary is **not** a list of subjects. When the user says "summarize my
+messages", they mean: read each message and understand it. Do not summarize
+from the subject line alone.
+
+For every message:
+
+1. **Open it** with `read -Id ...` and examine the body, attachments and links.
+2. Identify the **sender**: name + real email, and whether it is internal
+   (`…@aou.edu.sa`, `…@arabou.edu.sa`) or external.
+3. Say **what it says** in plain words.
+4. Say **what it wants from the user** — a concrete action, a deadline, or
+   "informational / nothing required".
+5. **Call out dates and deadlines explicitly.** If an email mentions a quiz,
+   exam, submission or deadline, lead with a warning before any detail.
+
+### Per-message template
+
+```
+<sender name + email> — <subject> (<date>)
+  الخلاصة: <what it says, 1–2 lines>
+  المطلوب: <the action, or "لا شيء — إعلامي">
+```
+
+### Triage order (most to least important)
+
+1. **Needs action now** — documents, payments, verification, submissions, deadlines.
+2. **Academic** — exams, quizzes, schedules, academic-calendar changes.
+3. **Optional invitations** — workshops, competitions, events.
+4. **Noise** — marketing/promotions. Compress these to one line each and group them.
+
+### De-duplicate and group
+
+Repeated reminders (e.g. several identically-worded verification emails) are
+**one** finding, not many. Say so: *"4 رسائل كلها عن نفس الموضوع"*. Group by
+sender or theme (FCS Activities, Student Announcements, …).
+
+### Talking to the user
+
+- Reply in the **user's language** (e.g. Arabic), not the tool's language.
+- **Lead with the ask.** Example: *"⚠️ انتبه: عندك كويز الحضارة الإسلامية — راجع خانة الإعلانات."*
+- Be concrete: sender name **and** email **and** date.
+- Distill — never paste full bodies or long tracking URLs.
+- Flag when the sender is external and when a link is a tracking/redirect link.
+- If a message requires nothing, say so plainly: *"لا شيء مطلوب".*
+- End with a short "الخلاصة" of the few things that actually matter.
+
+### Examples
+
+An academic notice:
+> **د. هادي العجمي** — *موعد الكويز الأول* (13 سبتمبر): أعلن موعد الكويز الأول.
+> المطلوب: **راجع الإعلانات بتركيز** واستعد.
+
+A promotional email:
+> **Notion** — *Unlock the best features* (4 سبتمبر): عرض تجريبي لـ AI. لا مطلوب (تسويق).
+
+### Don't
+
+- Don't summarize from subject lines only — open the message.
+- Don't paste raw bodies or dump the whole folder.
+- Don't say "no important messages" without reading them first.
+- Don't invent an action for an informational email, and don't miss a real
+  deadline buried in the body.
+
 ## Safety rules (IMPORTANT)
 
 1. **This tool is read-only.** There is no send, write, delete, move, or
