@@ -19,6 +19,7 @@ param(
   [string]$Before = '',
   [string]$Scope = '',
   [switch]$Regex,
+  [switch]$Snippet,
   [int]$Index = -1,
   [string]$Dest = '',
   [string]$State = '',
@@ -162,6 +163,7 @@ function Parse-Date([string]$s) {
 }
 $sinceD = Parse-Date $Since
 $beforeD = Parse-Date $Before
+$script:snippet = [bool]$Snippet
 
 function Item-Date($m, [string]$kind) {
   if ($kind -eq 'appt') { return (GetVal { $m.Start } $null) }
@@ -200,6 +202,7 @@ function Build-Records($items, [string]$kind, [int]$max, [int]$skip, [bool]$json
         categories  = Get-Categories $m
         flag        = Get-Flag $m
         attachments = [int](GetVal { $m.Attachments.Count } 0)
+        snippet     = if ($script:snippet) { P (Get-BodyText $m) 220 } else { $null }
         id          = GetVal { $m.EntryID } ''
       }
     }

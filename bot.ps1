@@ -119,24 +119,28 @@ function Check-Alerts {
     $raw = "$(Get-Content $AlertFile -Raw -Encoding UTF8)".Trim()
     if ($raw) { try { $since = [datetime]::Parse($raw).AddMinutes(-5) } catch {} }
   }
-  if (-not $since) { $since = (Get-Date).AddMinutes(-10) }
-  $rows = EngineJson @('-Cmd', 'list', '-Json', '-N', '50', '-Since', $since.ToString('s'))
+  if (-not $since) { $since = (Get-Date).AddMinutes(-30) }
+  $rows = EngineJson @('-Cmd', 'list', '-Json', '-Snippet', '-N', '50', '-Since', $since.ToString('s'))
+  $re = "$($cfg.alert_regex)"; if (-not $re) { $re = $IMPORTANT_RE }
   $alerted = Get-Alerted
   $sent = 0
   foreach ($r in $rows) {
-    $isHigh = ("$($r.importance)" -eq "$($cfg.alert_importance)")
-    $isFlag = ($cfg.alert_flagged -and "$($r.flag)" -eq 'Flagged')
-    if (-not ($isHigh -or $isFlag)) { continue }
     if ($alerted -contains $r.id) { continue }
-    $why = @()
-    if ($isHigh) { $why += 'أهمية عالية' }
-    if ($isFlag) { $why += 'معلّمة' }
-    $msg = "🚨 رسالة مهمة ($($why -join ' + '))`n`nمن: $($r.from) <$($r.fromEmail)>`nالتاريخ: $($r.date)`nالموضوع: $($r.subject)`n`nid: $($r.id)"
+    $reasons = @()
+    if ("$($r.importance)" -eq 'High') { $reasons += 'أهمية عالية' }
+    if ($cfg.alert_flagged -and "$($r.flag)" -eq 'Flagged') { $reasons += 'معلّمة' }
+    if ("$($r.subject) $($r.snippet)" -match $re) { $reasons += 'تحتاج انتباه' }
+    if ($reasons.Count -eq 0) { continue }
+    # Full body for important mail (no truncation).
+    $full = EngineJson @('-Cmd', 'read', '-Json', '-Id', $r.id)
+    $body = "$($full.body)"
+    if (-not $body) { $body = "$($r.snippet)" }
+    $msg = "🚨 رسالة مهمة ($($reasons -join ' + '))`n`nمن: $($r.from) <$($r.fromEmail)>`nالتاريخ: $($r.date)`nالموضوع: $($r.subject)`n`n$body"
     Send-Text $msg
     $alerted += $r.id
     $sent++
   }
-  if ($sent -gt 0) { Save-Alerted $alerted }
+  if ($sent -gt 0) { Save-Alerted $alerted; Log "alerts sent: $sent" }
   [IO.File]::WriteAllText($AlertFile, (Get-Date).ToString('o'), (New-Object System.Text.UTF8Encoding($false)))
 }
 
@@ -157,6 +161,8 @@ $ALIAS = @{
 }
 $ACTION_RE = 'مطلوب|يجب عليك|الرجاء|يرجى|تسجيل|سجّل|دفع|رسوم|غرامة|تحقق|وثيقة|مستند|ارفع|رفع|نموذج|استبيان|عبّئ|عبئ|آخر موعد|deadline|submit|upload|verify|register|payment|أكمل|اكمل|renew'
 $EXAM_RE = 'اختبار|كويز|امتحان|exam|quiz|midterm|final exam'
+# What counts as "important" for real-time alerts (content, not just the High flag).
+$IMPORTANT_RE = "$ACTION_RE|$EXAM_RE|جدول|نتيجة|رسوم|موعد|مراجعة|تنبيه"
 
 $script:pending = ''
 # Tap-only menu (no typing). Telegram sends the label back as a message.
