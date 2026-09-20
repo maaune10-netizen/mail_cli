@@ -64,14 +64,17 @@ export PATH="$HOME/tools/mail:$PATH"
 
 | Command | What it does |
 |---|---|
+| `doctor` | Check the environment (PowerShell, Outlook, COM, account, inbox) |
 | `whoami` | List accounts in the profile |
 | `folders [-Folder N]` | List folders (or children of folder `N`) |
 | `list [-Folder N] [-N n] [-Offset k] [-Since d] [-Before d] [-Json]` | List messages |
 | `unread [-N n] [-Offset k] [-Json]` | List unread messages |
 | `search -Query "text" [-Folder N] [-Scope all] [-N n] [-Offset k] [-Json]` | Search subject / sender / body |
-| `read -Id <entryid> [-Json]` | Full message: headers, recipients, body, attachment names |
+| `read -Id <entryid> [-Json]` | Full message: headers, recipients, body, links, attachment names |
+| `links -Id <entryid> [-Json]` | Extract links from a message |
 | `digest [-Folder N] [-N n] [-Offset k] [-Since d] [-Before d]` | Latest N with body snippets |
 | `attachments -Id <entryid> [-Json]` | Attachment names / sizes / types |
+| `attachment-save -Id <entryid> [-Index n] [-Dest dir] [-Json]` | Save attachment copy to a **local** temp folder |
 | `calendar [-N n] [-Offset k] [-Since d] [-Before d] [-Json]` | Calendar items |
 | `contacts [-N n] [-Offset k] [-Json]` | Contacts |
 | `help` | Usage |
@@ -82,13 +85,16 @@ every mail folder. `-Json` returns machine-readable output.
 ## Examples
 
 ```bash
+./mail doctor                     # check the environment first
 ./mail list -N 5
 ./mail list -Since 2026-09-01 -N 50
 ./mail unread -Json
 ./mail search -Query "exam schedule" -N 10
 ./mail search -Scope all -Query "invoice"
 ./mail read -Id <entryid>
+./mail links -Id <entryid> -Json
 ./mail attachments -Id <entryid> -Json
+./mail attachment-save -Id <entryid>          # -> %TEMP%\outlook-read\...
 ```
 
 Example output (`list`):
@@ -101,13 +107,17 @@ Example output (`list`):
 ## Read-only guarantee
 
 `outlook-read.ps1` contains **no** `Send`, `CreateItem`, `Delete`, `Move`,
-`Save`, or `MarkAsRead` calls. A write command name is rejected by the
+`MarkAsRead`, or `Save` calls. A write command name is rejected by the
 parameter validator:
 
 ```
 Cannot validate argument on parameter 'Cmd'. The argument "send"
-does not belong to the set "help,whoami,folders,list,..."
+does not belong to the set "help,doctor,whoami,folders,list,..."
 ```
+
+The single exception is `attachment-save`: it copies an attachment to a
+**local temp folder** for reading. It never writes to, sends from, or modifies
+the mailbox. Delete the temp files when done.
 
 ## Design notes
 
@@ -116,22 +126,33 @@ does not belong to the set "help,whoami,folders,list,..."
 - Internal Exchange senders expose an X500 DN in `SenderEmailAddress`; the
   tool resolves the real SMTP address via `Sender.GetExchangeUser()`
   (no object-model guard prompt in practice).
+- Message metadata is exposed: **importance** (Low/Normal/High), **categories**
+  and **flag** status (None/Complete/Flagged).
+- **Links** are extracted from both the HTML (`href`) and the plain-text body,
+  de-duplicated (`read` shows them; `links` returns them alone).
+- `attachment-save` sanitizes attachment names (strips any path, replaces
+  `<>:"|?*` and control chars) to prevent path traversal, and never overwrites
+  an existing file.
 - `search` scans the locally cached items (simple and dependency-free). For
   very large mailboxes, switch to `Restrict`/DASL.
-- Nothing is written to disk, no network calls, no credentials stored.
+- No network calls and no credentials stored. The only disk write is
+  `attachment-save`'s temp copy.
+- `doctor` validates PowerShell, Outlook process, COM, account and inbox, and
+  exits non-zero on failure.
 
 ## Limitations
 
-- Attachment **contents** are not read (only metadata). See roadmap.
 - Requires Classic Outlook to be installed, signed in, and launchable.
-- Message importance, categories and flags are not extracted.
+- Attachment **content** is available only by saving a copy with
+  `attachment-save` (a local temp file), then reading that file.
 - The `mail` wrapper needs a bash shell with `cygpath`.
 
 ## Roadmap
 
-- [ ] `attachment-save` — download an attachment to a local temp folder for reading (never writes to the mailbox)
-- [ ] message importance / categories / flag status
-- [ ] extract links separately from the body
+- [x] `attachment-save` — save an attachment to a local temp folder for reading
+- [x] message importance / categories / flag status
+- [x] extract links separately from the body
+- [ ] render / OCR attachment content directly
 
 ## License
 
