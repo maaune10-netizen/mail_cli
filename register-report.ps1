@@ -12,6 +12,7 @@ param(
   [string]$Times = '10:00,18:00',
   [string]$TaskName = 'AOU-Mail-Report',
   [int]$Count = 50,
+  [switch]$Telegram,
   [switch]$Remove
 )
 
@@ -32,18 +33,26 @@ if (-not (Test-Path $engine)) { throw "engine not found: $engine" }
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
 $argument = "-NoProfile -ExecutionPolicy Bypass -File `"$engine`" -Cmd report -Update -N $Count -State `"$stateFile`" -Out `"$outFile`""
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $argument -WorkingDirectory $repo
+$arguments = @()
+$arguments += New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $argument -WorkingDirectory $repo
+if ($Telegram) {
+  $notify = Join-Path $repo 'notify-telegram.ps1'
+  if (-not (Test-Path $notify)) { throw "notifier not found: $notify" }
+  $notifyArgument = "-NoProfile -ExecutionPolicy Bypass -File `"$notify`""
+  $arguments += New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $notifyArgument -WorkingDirectory $repo
+}
 $timesList = @($Times -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 $triggers = foreach ($t in $timesList) { New-ScheduledTaskTrigger -Daily -At ([datetime]::Parse($t)) }
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
 
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $triggers -Settings $settings -Principal $principal -Force | Out-Null
+Register-ScheduledTask -TaskName $TaskName -Action $arguments -Trigger $triggers -Settings $settings -Principal $principal -Force | Out-Null
 
 "Registered: $TaskName"
 "  times : $($timesList -join ', ')"
 "  report: $outFile"
 "  state : $stateFile"
+"  telegram: $(if ($Telegram) { 'yes' } else { 'no' })"
 ""
 "Run now to test:  Start-ScheduledTask -TaskName $TaskName"
 "Remove:           powershell -File register-report.ps1 -Remove"

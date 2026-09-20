@@ -34,7 +34,10 @@ administrator. That is exactly what this tool does.
 |---|---|
 | `outlook-read.ps1` | The engine (read-only). Runnable on its own. |
 | `mail` | Thin bash wrapper (nice argument passing). |
-| `register-report.ps1` | Registers the twice-daily report task in Windows Task Scheduler. |
+| `bot.ps1` | Resident Telegram bot: commands, live alerts, scheduled digests. |
+| `notify-telegram.ps1` | Send the report (or any text) to a Telegram chat. |
+| `register-report.ps1` | Registers a simple twice-daily report task in Task Scheduler. |
+| `register-bot.ps1` | Registers the resident bot task (at logon, auto-restart). |
 | `skills/outlook-read/SKILL.md` | Agent Skill — lets an AI agent use the CLI correctly and safely. |
 | `README.md` | This file. |
 
@@ -134,6 +137,58 @@ Start-ScheduledTask -TaskName AOU-Mail-Report   # run now to test
 ```
 
 This is the text that a Telegram bot (or any notifier) can send later.
+
+## Telegram bot (commands + live alerts)
+
+`bot.ps1` is a resident bot that:
+
+- answers commands from Telegram,
+- sends **real-time alerts** for HIGH-importance (or flagged) mail,
+- sends the **digest** at the configured times (default 10:00 and 18:00),
+- runs only when the user is logged on (Classic Outlook COM needs the session).
+
+### Config (outside the repo — never commit it)
+
+`%LOCALAPPDATA%\outlook-read\telegram.json`:
+
+```json
+{
+  "token": "<bot token from @BotFather>",
+  "chat_id": "<your chat id>",
+  "times": ["10:00", "18:00"],
+  "poll_seconds": 60,
+  "alert_importance": "High",
+  "alert_flagged": true,
+  "digest_count": 50
+}
+```
+
+Get `chat_id`: send any message to the bot, then open
+`https://api.telegram.org/bot<token>/getUpdates`.
+
+### Commands
+
+| Command | Action |
+|---|---|
+| `/check` | Check now and send the new mail |
+| `/unread` | List unread messages |
+| `/last N` | Last N messages |
+| `/search word` | Search every mail folder |
+| `/time 10:00,18:00` | Change the digest schedule |
+| `/alerts on|off` | Toggle real-time important-mail alerts |
+| `/status` | Show config and state |
+| `/help` | Command list |
+
+### Install / run
+
+```powershell
+powershell -ExecutionPolicy Bypass -File bot.ps1 -Test   # send a test batch
+powershell -ExecutionPolicy Bypass -File register-bot.ps1 # resident at logon
+powershell -ExecutionPolicy Bypass -File register-bot.ps1 -Remove
+```
+
+> The bot token lives only in the config file above — it is never written into
+the repository.
 
 ## Read-only guarantee
 
